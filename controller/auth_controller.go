@@ -733,14 +733,6 @@ func (ac *AuthController) Login(c *gin.Context) {
 		"message":       "Login successful",
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
-		"user": gin.H{
-			"id":                user.ID,
-			"first_name":        user.FirstName,
-			"last_name":         user.LastName,
-			"email":             user.Email,
-			"role":              user.Role,
-			"profile_completed": user.ProfileCompleted,
-		},
 	})
 }
 
@@ -756,20 +748,7 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Validate gender to only accept specific values
-	//validGenders := map[string]bool{
-	//	"male":   true,
-	//	"female": true,
-	//	"other":  true,
-	//	"":       true,
-	//}
-	//
-	//if !validGenders[strings.ToLower(user.Gender)] {
-	//	c.JSON(400, gin.H{"message": "Gender must be either male, female, or other"})
-	//	return
-	//}
-
-	// Validate citizenship to only accept specific values
+	// Validate citizenship
 	validCitizenship := map[string]bool{
 		"kenyan":     true,
 		"non-kenyan": true,
@@ -781,7 +760,7 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Validate sex to only accept specific values
+	// Validate sex
 	validSex := map[string]bool{
 		"M": true,
 		"F": true,
@@ -793,19 +772,83 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Validate SNE to only accept specific values
+	// Validate SNE (Yes/No or 1/0)
 	validSNE := map[string]bool{
 		"yes": true,
 		"no":  true,
+		"1":   true,
+		"0":   true,
 		"":    true,
 	}
 
 	if !validSNE[strings.ToLower(user.SNE)] {
-		c.JSON(400, gin.H{"message": "SNE must be either Yes or No"})
+		c.JSON(400, gin.H{"message": "SNE must be either Yes/No or 1/0"})
 		return
 	}
 
-	// Validate phone number (basic validation - you can enhance this)
+	// Validate designation based on citizenship
+	if user.Citizenship != "" {
+		citizenship := strings.ToLower(user.Citizenship)
+		designation := strings.ToLower(user.Designation)
+
+		if citizenship == "kenyan" {
+			validDesignations := map[string]bool{
+				"teacher": true,
+				"police":  true,
+				"":        true,
+			}
+			if user.Designation != "" && !validDesignations[designation] {
+				c.JSON(400, gin.H{"message": "For Kenyan citizens, designation must be Teacher or Police"})
+				return
+			}
+
+			// Validate teacher-specific fields
+			if designation == "teacher" {
+				if user.TSCNumber == "" {
+					c.JSON(400, gin.H{"message": "TSC Number is required for teachers"})
+					return
+				}
+				if user.SchoolCounty == "" || user.SchoolSubCounty == "" {
+					c.JSON(400, gin.H{"message": "School County and Sub-County are required for teachers"})
+					return
+				}
+			}
+		} else if citizenship == "non-kenyan" {
+			validDesignations := map[string]bool{
+				"guest": true,
+				"":      true,
+			}
+			if user.Designation != "" && !validDesignations[designation] {
+				c.JSON(400, gin.H{"message": "For Non-Kenyan citizens, designation must be Guest"})
+				return
+			}
+
+			// Validate guest-specific fields
+			if designation == "guest" {
+				if user.OrganizationName == "" {
+					c.JSON(400, gin.H{"message": "Organization Name is required for guests"})
+					return
+				}
+			}
+		}
+	}
+
+	// Validate ID/Passport number
+	if user.Citizenship != "" {
+		if strings.ToLower(user.Citizenship) == "kenyan" {
+			if user.IDNumber == "" {
+				c.JSON(400, gin.H{"message": "ID Number is required for Kenyan citizens"})
+				return
+			}
+		} else if strings.ToLower(user.Citizenship) == "non-kenyan" {
+			if user.PassportNumber == "" {
+				c.JSON(400, gin.H{"message": "Passport Number is required for Non-Kenyan citizens"})
+				return
+			}
+		}
+	}
+
+	// Validate phone number
 	if user.Phone != "" && len(user.Phone) < 10 {
 		c.JSON(400, gin.H{"message": "Phone number must be at least 10 digits"})
 		return
@@ -814,31 +857,74 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 	// Create a policy for sanitization
 	p := bluemonday.NewPolicy()
 
-	res := initializers.DB.Model(&user).Where("id = ?", userID).Updates(
-		map[string]interface{}{
-			"first_name": p.Sanitize(user.FirstName),
-			"last_name":  p.Sanitize(user.LastName),
-			"phone":      p.Sanitize(user.Phone),
-			//"gender":      p.Sanitize(strings.ToLower(user.Gender)),
-			"citizenship": p.Sanitize(strings.ToLower(user.Citizenship)),
-			"sex":         p.Sanitize(strings.ToUpper(user.Sex)),
-			"sne":         p.Sanitize(strings.ToLower(user.SNE)),
-		})
+	// Prepare update map
+	updateData := map[string]interface{}{
+		"first_name":  p.Sanitize(user.FirstName),
+		"last_name":   p.Sanitize(user.LastName),
+		"phone":       p.Sanitize(user.Phone),
+		"citizenship": p.Sanitize(strings.ToLower(user.Citizenship)),
+		"sex":         p.Sanitize(strings.ToUpper(user.Sex)),
+		"sne":         p.Sanitize(strings.ToLower(user.SNE)),
+		"designation": p.Sanitize(strings.ToLower(user.Designation)),
+	}
+
+	// Add citizenship-specific fields
+	if strings.ToLower(user.Citizenship) == "kenyan" {
+		updateData["id_number"] = p.Sanitize(user.IDNumber)
+		updateData["passport_number"] = "" // Clear passport for Kenyan citizens
+
+		// Add teacher-specific fields
+		if strings.ToLower(user.Designation) == "teacher" {
+			updateData["tsc_number"] = p.Sanitize(user.TSCNumber)
+			updateData["school_county"] = p.Sanitize(user.SchoolCounty)
+			updateData["school_sub_county"] = p.Sanitize(user.SchoolSubCounty)
+			updateData["subjects_in_college"] = p.Sanitize(user.SubjectsInCollege)
+			updateData["teaching_subjects"] = p.Sanitize(user.TeachingSubjects)
+			updateData["organization_name"] = "" // Clear guest field
+		} else {
+			// Clear teacher fields if not a teacher
+			updateData["tsc_number"] = ""
+			updateData["school_county"] = ""
+			updateData["school_sub_county"] = ""
+			updateData["subjects_in_college"] = ""
+			updateData["teaching_subjects"] = ""
+			updateData["organization_name"] = ""
+		}
+	} else if strings.ToLower(user.Citizenship) == "non-kenyan" {
+		updateData["passport_number"] = p.Sanitize(user.PassportNumber)
+		updateData["id_number"] = "" // Clear ID number for Non-Kenyan citizens
+
+		// Add guest-specific fields
+		if strings.ToLower(user.Designation) == "guest" {
+			updateData["organization_name"] = p.Sanitize(user.OrganizationName)
+		} else {
+			updateData["organization_name"] = ""
+		}
+
+		// Clear teacher fields for non-Kenyan citizens
+		updateData["tsc_number"] = ""
+		updateData["school_county"] = ""
+		updateData["school_sub_county"] = ""
+		updateData["subjects_in_college"] = ""
+		updateData["teaching_subjects"] = ""
+	}
+
+	// Update user profile
+	res := initializers.DB.Model(&user).Where("id = ?", userID).Updates(updateData)
 
 	if res.Error != nil {
-		c.JSON(400, gin.H{"message": "The server couldn't be able to complete your request, please try again later!"})
+		c.JSON(400, gin.H{"message": "The server couldn't complete your request, please try again later!"})
 		return
 	}
 
-	// Check number of rows affected to confirm whether a success or not
-	// If 0 rows are affected then no matching user ID was found
+	// Check number of rows affected
 	if res.RowsAffected == 0 {
 		c.JSON(400, gin.H{"message": "User with ID " + userID + " was not found!"})
 		return
 	}
 
 	// Mark profile as completed if basic info is provided
-	if user.FirstName != "" && user.LastName != "" && user.Phone != "" {
+	if user.FirstName != "" && user.LastName != "" && user.Phone != "" && user.Citizenship != "" {
 		initializers.DB.Model(&models.User{}).Where("id = ?", userID).Update("profile_completed", true)
 	}
 
@@ -849,20 +935,42 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		return
 	}
 
+	// Prepare response based on citizenship and designation
+	response := gin.H{
+		"id":                updatedUser.ID,
+		"first_name":        updatedUser.FirstName,
+		"last_name":         updatedUser.LastName,
+		"email":             updatedUser.Email,
+		"phone":             updatedUser.Phone,
+		"citizenship":       updatedUser.Citizenship,
+		"sex":               updatedUser.Sex,
+		"sne":               updatedUser.SNE,
+		"designation":       updatedUser.Designation,
+		"profile_completed": updatedUser.ProfileCompleted,
+	}
+
+	// Add citizenship-specific fields to response
+	if strings.ToLower(updatedUser.Citizenship) == "kenyan" {
+		response["id_number"] = updatedUser.IDNumber
+
+		if strings.ToLower(updatedUser.Designation) == "teacher" {
+			response["tsc_number"] = updatedUser.TSCNumber
+			response["school_county"] = updatedUser.SchoolCounty
+			response["school_sub_county"] = updatedUser.SchoolSubCounty
+			response["subjects_in_college"] = updatedUser.SubjectsInCollege
+			response["teaching_subjects"] = updatedUser.TeachingSubjects
+		}
+	} else if strings.ToLower(updatedUser.Citizenship) == "non-kenyan" {
+		response["passport_number"] = updatedUser.PassportNumber
+
+		if strings.ToLower(updatedUser.Designation) == "guest" {
+			response["organization_name"] = updatedUser.OrganizationName
+		}
+	}
+
 	c.JSON(200, gin.H{
-		"message": "Successfully saved the user's new data.",
-		"user": gin.H{
-			"id":         updatedUser.ID,
-			"first_name": updatedUser.FirstName,
-			"last_name":  updatedUser.LastName,
-			"email":      updatedUser.Email,
-			"phone":      updatedUser.Phone,
-			//"gender":            updatedUser.Gender,
-			"citizenship":       updatedUser.Citizenship,
-			"sex":               updatedUser.Sex,
-			"sne":               updatedUser.SNE,
-			"profile_completed": updatedUser.ProfileCompleted,
-		},
+		"message": "Successfully saved the user's profile data.",
+		"user":    response,
 	})
 }
 

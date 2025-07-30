@@ -1,3 +1,4 @@
+// models/user.go - Updated User model
 package models
 
 import (
@@ -19,8 +20,21 @@ type User struct {
 	Phone            string    `gorm:"type:varchar(20)" json:"phone"`
 	Citizenship      string    `gorm:"type:varchar(20)" json:"citizenship"`
 	Sex              string    `gorm:"type:varchar(1)" json:"sex"`
+	IDNumber         string    `gorm:"type:varchar(50)" json:"id_number"`
+	PassportNumber   string    `gorm:"type:varchar(50)" json:"passport_number"`
 	SNE              string    `gorm:"type:varchar(3)" json:"sne"`
+	Designation      string    `gorm:"type:varchar(50)" json:"designation"`
 	Role             string    `gorm:"type:varchar(50);default:'user'" json:"role"`
+
+	// Teacher specific fields
+	TSCNumber         string `gorm:"type:varchar(50)" json:"tsc_number"`
+	SchoolCounty      string `gorm:"type:varchar(100)" json:"school_county"`
+	SchoolSubCounty   string `gorm:"type:varchar(100)" json:"school_sub_county"`
+	SubjectsInCollege string `gorm:"type:text" json:"subjects_in_college"`
+	TeachingSubjects  string `gorm:"type:text" json:"teaching_subjects"`
+
+	// Guest specific fields
+	OrganizationName string `gorm:"type:varchar(200)" json:"organization_name"`
 }
 
 func (base *User) BeforeCreate(tx *gorm.DB) error {
