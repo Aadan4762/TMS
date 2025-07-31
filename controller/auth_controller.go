@@ -772,19 +772,7 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Validate SNE (Yes/No or 1/0)
-	validSNE := map[string]bool{
-		"yes": true,
-		"no":  true,
-		"1":   true,
-		"0":   true,
-		"":    true,
-	}
-
-	if !validSNE[strings.ToLower(user.SNE)] {
-		c.JSON(400, gin.H{"message": "SNE must be either Yes/No or 1/0"})
-		return
-	}
+	// SNE validation is not needed since it's a boolean field (true/false/null)
 
 	// Validate designation based on citizenship
 	if user.Citizenship != "" {
@@ -864,7 +852,7 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		"phone":       p.Sanitize(user.Phone),
 		"citizenship": p.Sanitize(strings.ToLower(user.Citizenship)),
 		"sex":         p.Sanitize(strings.ToUpper(user.Sex)),
-		"sne":         p.Sanitize(strings.ToLower(user.SNE)),
+		"sne":         user.SNE, // No sanitization needed for boolean
 		"designation": p.Sanitize(strings.ToLower(user.Designation)),
 	}
 
@@ -923,9 +911,32 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Mark profile as completed if basic info is provided
-	if user.FirstName != "" && user.LastName != "" && user.Phone != "" && user.Citizenship != "" {
-		initializers.DB.Model(&models.User{}).Where("id = ?", userID).Update("profile_completed", true)
+	// Mark profile as completed if basic info is provided (check existing data)
+	var currentUser models.User
+	if err := initializers.DB.Where("id = ?", userID).First(&currentUser).Error; err == nil {
+		// Check if basic info is complete (either from current data or update)
+		firstName := currentUser.FirstName
+		lastName := currentUser.LastName
+		phone := currentUser.Phone
+		citizenship := currentUser.Citizenship
+
+		// Use updated values if provided
+		if user.FirstName != "" {
+			firstName = user.FirstName
+		}
+		if user.LastName != "" {
+			lastName = user.LastName
+		}
+		if user.Phone != "" {
+			phone = user.Phone
+		}
+		if user.Citizenship != "" {
+			citizenship = user.Citizenship
+		}
+
+		if firstName != "" && lastName != "" && phone != "" && citizenship != "" {
+			initializers.DB.Model(&models.User{}).Where("id = ?", userID).Update("profile_completed", true)
+		}
 	}
 
 	// Get updated user data to return
@@ -974,7 +985,6 @@ func (ac *AuthController) UpdateProfile(c *gin.Context) {
 	})
 }
 
-// Update GetProfile to include role
 func (ac *AuthController) GetProfile(c *gin.Context) {
 	userID := c.GetString("user_id")
 

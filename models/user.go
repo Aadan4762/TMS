@@ -1,4 +1,3 @@
-// models/user.go - Updated User model
 package models
 
 import (
@@ -22,7 +21,7 @@ type User struct {
 	Sex              string    `gorm:"type:varchar(1)" json:"sex"`
 	IDNumber         string    `gorm:"type:varchar(50)" json:"id_number"`
 	PassportNumber   string    `gorm:"type:varchar(50)" json:"passport_number"`
-	SNE              string    `gorm:"type:varchar(3)" json:"sne"`
+	SNE              *bool     `gorm:"type:boolean" json:"sne"`
 	Designation      string    `gorm:"type:varchar(50)" json:"designation"`
 	Role             string    `gorm:"type:varchar(50);default:'user'" json:"role"`
 
